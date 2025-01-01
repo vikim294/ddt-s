@@ -24,104 +24,55 @@ httpServer.listen(3000, () => {
 const matchingPool = new MatchingPool();
 const playerInfos = new PlayersInfo();
 
-io.on("connection", (socket) => {
+const matchmakingNamespace = io.of("/matchmaking");
+const battlefieldNamespace = io.of("/battlefield");
+
+matchmakingNamespace.on("connection", (socket) => {
   const playerId = socket.handshake.auth.token;
-  const connectionType = socket.handshake.query.connectionType;
 
-  console.log(
-    `[connected] ${playerId} connected! connectionType: ${connectionType}`
-  );
-
-  const playerInfo = playerInfos.get(playerId);
-  if (playerInfo) {
-    // reconnect
-    // 断开之前的socket，并替换为新的socket
-    playerInfo.socket.disconnect();
-    playerInfo.socket = socket;
-
-    // 如果之前是battlefield
-    if (playerInfo.connectionType === "battlefield") {
-      // battlefield 重连
-      playerInfo.isReconnection = true;
-    }
-
-    playerInfo.connectionType = connectionType;
-  } else {
-    // new connection
-    playerInfos.add(playerId, connectionType, socket, false);
-  }
-
-  // if(socket.recovered) {
-  //   console.log(`${playerId} recovered!`);
-  // }
-  // else {
-  // console.log(`${playerId} connected!`);
-  // }
+  console.log(`[matchmaking/connected] ${playerId} connected!`);
 
   socket.on("requestMatching", (client) => {
-    console.log(`[requestMatching] ${client.id}`);
+    console.log(`[matchmaking/requestMatching] ${client.id}`);
     if (matchingPool.has(client.id)) return;
     matchingPool.add(client);
     const matchedPlayers = matchingPool.tryToMatch(client);
     if (matchedPlayers) {
-      console.log("[matchmakingCompleted]", matchedPlayers);
+      console.log("[matchmaking/matchmakingCompleted]", matchedPlayers);
 
-      // uuid
+      // battlefield
       const battlefield = new Battlefield();
 
-      io.emit("matchmakingCompleted", matchedPlayers, battlefield.id);
+      matchmakingNamespace.emit(
+        "matchmakingCompleted",
+        matchedPlayers,
+        battlefield.id
+      );
       matchedPlayers.forEach((player) => {
         // 将 players加入 battlefield
         battlefield.add(player);
 
-        // 将player, socket, battlefield 关联
-        playerInfos.setBattlefieldByPlayerId(player.id, battlefield);
+        // 将player, battlefield 关联
+        playerInfos.add(player.id);
+        playerInfos.setBattlefield(player.id, battlefield);
       });
     }
   });
 
   // cancelMatching
   socket.on("cancelMatching", () => {
-    console.log("cancelMatching\n", playerId);
+    console.log(`[matchmaking/cancelMatching] ${playerId}`);
 
     matchingPool.remove(playerId);
   });
 
   socket.on("disconnect", (reason) => {
-    console.log(`[disconnected] ${playerId} ${reason}`);
-    const playerInfo = playerInfos.get(playerId);
+    console.log(`[matchmaking/disconnected] ${playerId} reason: ${reason}`);
 
     switch (reason) {
       case "client namespace disconnect": {
         // 客户端主动断开连接
 
-        // 玩家在比赛中
-        if (playerInfo) {
-          if (playerInfo.connectionType === "battlefield") {
-            // 主动退出比赛
-            console.log(`[playerLeaveGame] ${playerId}`);
-            // 通知其他玩家
-            io.emit("playerLeaveGame", playerId);
-
-            // 移除battlefield中的player
-            const battlefield = playerInfo.battlefield;
-            battlefield.remove(playerId);
-
-            // 当battlefield中没有玩家时，销毁battlefield
-            if (battlefield.playerNum === 0) {
-              console.log(`[dispose battlefield] ${battlefield.id}`);
-              battlefield.dispose();
-            }
-
-            // 移除playerInfo
-            playerInfos.remove(playerId);
-
-            console.log(
-              `playerInfos(${playerInfos.size}):`,
-              playerInfos.getPlayerIds()
-            );
-          }
-        }
         break;
       }
 
@@ -129,11 +80,7 @@ io.on("connection", (socket) => {
         // 客户端网络异常断开连接 / 客户端关闭浏览器
 
         // 玩家在比赛中
-        if (playerInfo) {
-          console.log(`[playerOffline] ${playerId}`);
-          // 通知其他玩家
-          io.emit("playerOffline", playerId);
-        }
+
         break;
       }
 
@@ -147,18 +94,91 @@ io.on("connection", (socket) => {
 
     // players = players.filter(player => player.id !== playerId)
   });
+});
+
+battlefieldNamespace.on("connection", (socket) => {
+  const playerId = socket.handshake.auth.token;
+
+  console.log(`[battlefield/connected] ${playerId} connected!`);
+
+  const playerInfoSocket = playerInfos.getSocket(playerId);
+  const battlefield = playerInfos.getBattlefield(playerId);
+  // join battlefield (room)
+  socket.join(battlefield.id);
+  if (!playerInfoSocket) {
+    // new connection
+    playerInfos.setSocket(playerId, socket);
+    playerInfos.setIsReconnection(playerId, false);
+  } else {
+    // reconnect
+    // 断开之前的socket，并替换为新的socket
+    playerInfoSocket.leave(battlefield.id);
+    playerInfoSocket.disconnect();
+    playerInfos.setSocket(playerId, socket);
+    playerInfos.setIsReconnection(playerId, true);
+  }
+
+  socket.on("disconnect", (reason) => {
+    console.log(`[battlefield/disconnected] ${playerId} reason: ${reason}`);
+    const battlefield = playerInfos.getBattlefield(playerId);
+
+    switch (reason) {
+      case "client namespace disconnect": {
+        // 客户端主动断开连接
+
+        // 主动退出比赛
+        console.log(`[battlefield/playerLeaveGame] ${playerId}`);
+        // 通知其他玩家
+        battlefieldNamespace.in(battlefield.id).emit("playerLeaveGame", playerId);
+
+        // 移除battlefield中的player
+        battlefield.remove(playerId);
+
+        // 当battlefield中没有玩家时，销毁battlefield
+        if (battlefield.playerNum === 0) {
+          console.log(`[dispose battlefield] ${battlefield.id}`);
+          battlefield.dispose();
+        }
+
+        // 移除playerInfo
+        playerInfos.remove(playerId);
+
+        console.log(
+          `playerInfos(${playerInfos.size}):`,
+          playerInfos.getPlayerIds()
+        );
+        break;
+      }
+
+      case "transport close": {
+        // 客户端网络异常断开连接 / 客户端关闭浏览器
+
+        // 玩家在比赛中
+        console.log(`[battlefield/playerOffline] ${playerId}`);
+        // 通知其他玩家
+        battlefieldNamespace.in(battlefield.id).emit("playerOffline", playerId);
+        break;
+      }
+
+      default: {
+        break;
+      }
+    }
+  });
 
   socket.on("joinBattlefield", () => {
     const { battlefield, isReconnection } = playerInfos.get(playerId);
 
     if (isReconnection) {
       // 如果是重连
-      console.log(`[reconnectBattlefield] ${playerId}`);
+      console.log(`[battlefield/reconnectBattlefield] ${playerId}`);
       // player重新连接：同步数据，并通知其他玩家，
-      io.emit("playerReconnectsBattlefield", playerId);
+      battlefieldNamespace.in(battlefield.id).emit("playerReconnectsBattlefield", playerId);
     } else {
       // 如果是第一次
-      console.log(`[joinBattlefield] ${playerId} ${battlefield.id}`);
+      console.log(
+        `[battlefield/joinBattlefield] ${playerId} ${battlefield.id}`
+      );
       battlefield.setPlayerIsOnline(playerId, true);
 
       if (battlefield.isAllOnlie) {
@@ -191,30 +211,26 @@ io.on("connection", (socket) => {
           activePlayerId: battlefield.players[battlefield.activePlayerIndex].id,
           players,
         };
-        console.log("initBattlefield", data);
-        io.emit("initBattlefield", data);
+        console.log("[battlefield/initBattlefield]", data);
+        battlefieldNamespace.in(battlefield.id).emit("initBattlefield", data);
       }
     }
   });
 
-  // onPlayerConnection({
-  //   playerId,
-  // })
-
   // activePlayerMove
   socket.on("activePlayerMove", (direction) => {
-    const battlefield = playerInfos.getBattlefieldByPlayerId(playerId);
+    const battlefield = playerInfos.getBattlefield(playerId);
     if (!battlefield) return;
     console.log(
       `battlefieldId: ${battlefield.id} ${
         battlefield.players[battlefield.activePlayerIndex].id
       } activePlayerMove ${direction}`
     );
-    io.emit("activePlayerMove", direction);
+    battlefieldNamespace.in(battlefield.id).emit("activePlayerMove", direction);
   });
 
   socket.on("activePlayerMoveEnd", (centerPoint) => {
-    const battlefield = playerInfos.getBattlefieldByPlayerId(playerId);
+    const battlefield = playerInfos.getBattlefield(playerId);
     if (!battlefield) return;
 
     console.log(
@@ -222,7 +238,7 @@ io.on("connection", (socket) => {
         battlefield.players[battlefield.activePlayerIndex].id
       } activePlayerMoveEnd x, y: ${centerPoint.x}, ${centerPoint.y}`
     );
-    io.emit("activePlayerMoveEnd", centerPoint);
+    battlefieldNamespace.in(battlefield.id).emit("activePlayerMoveEnd", centerPoint);
   });
 
   socket.on("activePlayerFall", (centerPoint) => {
@@ -254,55 +270,3 @@ io.on("connection", (socket) => {
     });
   });
 });
-
-function onPlayerConnection({ playerId }) {
-  if (players.find((player) => player.id === playerId)) return;
-  if (players.length === 0) {
-    // 1
-    players[0] = {
-      id: playerId,
-      name: playerId,
-      centerPoint: {
-        x: 1147,
-        y: 385,
-      },
-      direction: "right",
-
-      healthMax: 1000,
-
-      weapon: {
-        angleRange: 30,
-        damage: 250,
-      },
-    };
-    return;
-  }
-
-  if (players.length === 1) {
-    // 2
-    players[1] = {
-      id: playerId,
-      name: playerId,
-      centerPoint: {
-        x: 1546,
-        y: 710,
-      },
-      direction: "left",
-
-      healthMax: 1000,
-
-      weapon: {
-        angleRange: 30,
-        damage: 250,
-      },
-    };
-
-    // 匹配完成
-    console.log("匹配完成");
-    activePlayerIndex = 0;
-    io.emit("matchCompleted", {
-      activePlayerId: players[activePlayerIndex].id,
-      players,
-    });
-  }
-}
