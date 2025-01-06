@@ -1,4 +1,4 @@
-export {};
+export { };
 
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -32,11 +32,11 @@ matchmakingNamespace.on("connection", (socket) => {
 
   console.log(`[matchmaking/connected] ${playerId} connected!`);
 
-  socket.on("requestMatching", (client) => {
-    console.log(`[matchmaking/requestMatching] ${client.id}`);
-    if (matchingPool.has(client.id)) return;
-    matchingPool.add(client);
-    const matchedPlayers = matchingPool.tryToMatch(client);
+  socket.on("requestMatching", (player) => {
+    console.log(`[matchmaking/requestMatching] ${player.id}`);
+    if (matchingPool.has(player.id)) return;
+    matchingPool.add(player);
+    const matchedPlayers = matchingPool.tryToMatch(player);
     if (matchedPlayers) {
       console.log("[matchmaking/matchmakingCompleted]", matchedPlayers);
 
@@ -48,9 +48,9 @@ matchmakingNamespace.on("connection", (socket) => {
         matchedPlayers,
         battlefield.id
       );
-      matchedPlayers.forEach((player) => {
+      matchedPlayers.forEach((player, index) => {
         // 将 players加入 battlefield
-        battlefield.add(player);
+        battlefield.add(player, index);
 
         // 将player, battlefield 关联
         playerInfos.add(player.id);
@@ -128,11 +128,12 @@ battlefieldNamespace.on("connection", (socket) => {
 
         // 主动退出比赛
         console.log(`[battlefield/playerLeaveGame] ${playerId}`);
-        // 通知其他玩家
-        battlefieldNamespace.in(battlefield.id).emit("playerLeaveGame", playerId);
 
         // 移除battlefield中的player
         battlefield.remove(playerId);
+
+        // 通知其他玩家
+        battlefieldNamespace.in(battlefield.id).emit("playerLeaveGame", playerId);
 
         // 当battlefield中没有玩家时，销毁battlefield
         if (battlefield.playerNum === 0) {
@@ -155,6 +156,7 @@ battlefieldNamespace.on("connection", (socket) => {
 
         // 玩家在比赛中
         console.log(`[battlefield/playerOffline] ${playerId}`);
+        battlefield.setPlayerIsOnline(playerId, false);
         // 通知其他玩家
         battlefieldNamespace.in(battlefield.id).emit("playerOffline", playerId);
         break;
@@ -173,7 +175,12 @@ battlefieldNamespace.on("connection", (socket) => {
       // 如果是重连
       console.log(`[battlefield/reconnectBattlefield] ${playerId}`);
       // player重新连接：同步数据，并通知其他玩家，
-      battlefieldNamespace.in(battlefield.id).emit("playerReconnectsBattlefield", playerId);
+      const data = {
+        reconnectionPlayerId: playerId,
+        activePlayerId: battlefield.players[battlefield.activePlayerIndex].id,
+        players: battlefield.players
+      }
+      battlefieldNamespace.in(battlefield.id).emit("playerReconnectsBattlefield", data);
     } else {
       // 如果是第一次
       console.log(
@@ -182,34 +189,10 @@ battlefieldNamespace.on("connection", (socket) => {
       battlefield.setPlayerIsOnline(playerId, true);
 
       if (battlefield.isAllOnlie) {
-        const players = battlefield.players.map((player, index) => {
-          let centerPoint = null;
-          let direction = null;
-          if (index === 0) {
-            centerPoint = { x: 1147, y: 385 };
-            direction = "right";
-          } else if (index === 1) {
-            centerPoint = { x: 1546, y: 710 };
-            direction = "left";
-          }
-
-          return {
-            id: player.id,
-            name: player.id,
-            level: player.level,
-            centerPoint,
-            direction,
-            healthMax: 1000,
-            weapon: {
-              angleRange: 30,
-              damage: 250,
-            },
-          };
-        });
         battlefield.activePlayerIndex = 0;
         const data = {
           activePlayerId: battlefield.players[battlefield.activePlayerIndex].id,
-          players,
+          players: battlefield.players
         };
         console.log("[battlefield/initBattlefield]", data);
         battlefieldNamespace.in(battlefield.id).emit("initBattlefield", data);
@@ -222,51 +205,85 @@ battlefieldNamespace.on("connection", (socket) => {
     const battlefield = playerInfos.getBattlefield(playerId);
     if (!battlefield) return;
     console.log(
-      `battlefieldId: ${battlefield.id} ${
-        battlefield.players[battlefield.activePlayerIndex].id
+      `battlefieldId: ${battlefield.id} ${battlefield.players[battlefield.activePlayerIndex].id
       } activePlayerMove ${direction}`
     );
     battlefieldNamespace.in(battlefield.id).emit("activePlayerMove", direction);
   });
 
-  socket.on("activePlayerMoveEnd", (centerPoint) => {
+  socket.on("activePlayerMoveEnd", (centerPoint, direction) => {
     const battlefield = playerInfos.getBattlefield(playerId);
     if (!battlefield) return;
 
     console.log(
-      `battlefieldId: ${battlefield.id} ${
-        battlefield.players[battlefield.activePlayerIndex].id
-      } activePlayerMoveEnd x, y: ${centerPoint.x}, ${centerPoint.y}`
+      `[activePlayerMoveEnd] battlefieldId: ${battlefield.id} ${battlefield.players[battlefield.activePlayerIndex].id
+      } x, y: ${centerPoint.x}, ${centerPoint.y} direction: ${direction}`
     );
-    battlefieldNamespace.in(battlefield.id).emit("activePlayerMoveEnd", centerPoint);
+
+    const player = battlefield.getPlayer(playerId)
+    if (!player) {
+      console.log(`player ${playerId} is null`)
+      return
+    }
+
+    player.centerPoint = centerPoint
+    player.direction = direction
+
+    battlefieldNamespace.in(battlefield.id).emit("activePlayerMoveEnd", centerPoint, direction);
   });
 
   socket.on("activePlayerFall", (centerPoint) => {
+    const battlefield = playerInfos.getBattlefield(playerId);
+    if (!battlefield) return;
+
     console.log(
-      `${players[activePlayerIndex].id} activePlayerFall x, y: ${centerPoint.x}, ${centerPoint.y}`
+      `[activePlayerFall] battlefieldId: ${battlefield.id} ${battlefield.players[battlefield.activePlayerIndex].id
+      } x, y: ${centerPoint.x}, ${centerPoint.y}`
     );
-    io.emit("activePlayerFall", centerPoint);
+    battlefieldNamespace.in(battlefield.id).emit("activePlayerFall", centerPoint);
+  });
+
+  // playerUsesSkill
+  socket.on("playerUsesSkill", (playerId, skill) => {
+    const battlefield = playerInfos.getBattlefield(playerId);
+    if (!battlefield) return;
+
+    console.log(`[playerUsesSkill] battlefieldId: ${battlefield.id} ${battlefield.players[battlefield.activePlayerIndex].id
+      }`);
+    battlefieldNamespace.in(battlefield.id).emit("playerUsesSkill", skill);
   });
 
   // activePlayerFire
   socket.on("activePlayerFire", (firingData) => {
-    console.log(`${players[activePlayerIndex].id} activePlayerFire`);
-    io.emit("activePlayerFire", firingData);
+    const battlefield = playerInfos.getBattlefield(playerId);
+    if (!battlefield) return;
+
+    console.log(`[activePlayerFire] battlefieldId: ${battlefield.id} ${battlefield.players[battlefield.activePlayerIndex].id
+      }`);
+    battlefieldNamespace.in(battlefield.id).emit("activePlayerFire", firingData);
   });
 
   socket.on("syncBombDataBeforePlayerFires", (bombsData) => {
+    const battlefield = playerInfos.getBattlefield(playerId);
+    if (!battlefield) return;
+
     console.log(
-      `${players[activePlayerIndex].id} syncBombDataBeforePlayerFires`
+      `[syncBombDataBeforePlayerFires] battlefieldId: ${battlefield.id} ${battlefield.players[battlefield.activePlayerIndex].id
+      }`
     );
-    io.emit("syncBombDataBeforePlayerFires", bombsData);
+    battlefieldNamespace.in(battlefield.id).emit("syncBombDataBeforePlayerFires", bombsData);
   });
 
   // startNextTurn
   socket.on("startNextTurn", () => {
-    activePlayerIndex = (activePlayerIndex + 1) % players.length;
-    console.log(`startNextTurn activePlayer: ${players[activePlayerIndex].id}`);
-    io.emit("startNextTurn", {
-      activePlayerId: players[activePlayerIndex].id,
+    const battlefield = playerInfos.getBattlefield(playerId);
+    if (!battlefield) return;
+
+    battlefield.calculateActivePlayerIndex();
+    console.log(`[startNextTurn] battlefieldId: ${battlefield.id} activePlayer: ${battlefield.activePlayer.id}
+      }`);
+    battlefieldNamespace.in(battlefield.id).emit("startNextTurn", {
+      activePlayerId: battlefield.activePlayer.id
     });
   });
 });

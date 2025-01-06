@@ -15,6 +15,10 @@ export class Battlefield {
     this.activePlayerIndex = null;
   }
 
+  get activePlayer() {
+    return this.players[this.activePlayerIndex]
+  }
+
   get playerNum() {
     return this.players.length;
   }
@@ -27,7 +31,15 @@ export class Battlefield {
     return this.players.every((item) => !item.isOnline);
   }
 
-  add(player) {
+  add(player, index) {
+    if (index === 0) {
+      player.centerPoint = { x: 1147, y: 385 };
+      player.direction = "right";
+    } else if (index === 1) {
+      player.centerPoint = { x: 1546, y: 710 };
+      player.direction = "left";
+    }
+
     this.players.push(player);
   }
 
@@ -56,5 +68,9 @@ export class Battlefield {
     if (player) {
       player.isOnline = isOnline;
     }
+  }
+
+  calculateActivePlayerIndex() {
+    this.activePlayerIndex = (this.activePlayerIndex + 1) % this.players.length;
   }
 }
