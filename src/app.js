@@ -18,7 +18,7 @@ const io = new Server(httpServer, {
 });
 
 httpServer.listen(3000, () => {
-  console.log("server is listening on 3000");
+  console.log(`server is running at http://127.0.0.1:3000`);
 });
 
 const matchingPool = new MatchingPool();
@@ -263,7 +263,7 @@ battlefieldNamespace.on("connection", (socket) => {
     battlefieldNamespace.in(battlefield.id).emit("activePlayerFire", firingData);
   });
 
-  socket.on("syncBombDataBeforePlayerFires", (bombsData) => {
+  socket.on("syncBombDataBeforePlayerFires", (bombsData, isTrident) => {
     const battlefield = playerInfos.getBattlefield(playerId);
     if (!battlefield) return;
 
@@ -271,7 +271,7 @@ battlefieldNamespace.on("connection", (socket) => {
       `[syncBombDataBeforePlayerFires] battlefieldId: ${battlefield.id} ${battlefield.players[battlefield.activePlayerIndex].id
       }`
     );
-    battlefieldNamespace.in(battlefield.id).emit("syncBombDataBeforePlayerFires", bombsData);
+    battlefieldNamespace.in(battlefield.id).emit("syncBombDataBeforePlayerFires", bombsData, isTrident);
   });
 
   // startNextTurn
