@@ -33,10 +33,12 @@ export class Battlefield {
 
   add(player, index) {
     if (index === 0) {
-      player.centerPoint = { x: 1147, y: 385 };
+      // player.centerPoint = { x: 1147, y: 385 };
+      player.centerPoint = { x: 744, y: 344 };
       player.direction = "right";
     } else if (index === 1) {
-      player.centerPoint = { x: 1546, y: 710 };
+      // player.centerPoint = { x: 1546, y: 710 };
+      player.centerPoint = { x: 1156, y: 516 };
       player.direction = "left";
     }
 
