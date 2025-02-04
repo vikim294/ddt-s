@@ -3,7 +3,8 @@ import jwt from "jsonwebtoken"
 import bcrypt from "bcrypt"
 
 import pool from "../utils/db.js"
-import { JWT_SECRET } from "../utils/http.js";
+import { redis } from "../utils/redis.js";
+import { JWT_SECRET } from "../utils/constant.js";
 
 const router = new Router({
     prefix: '/user'

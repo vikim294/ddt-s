@@ -1,8 +1,13 @@
 import { Server } from "socket.io";
+import jwt from "jsonwebtoken"
+import { v4 as uuidv4 } from 'uuid';
 
 import { MatchingPool } from "../libs/matchingPool.js";
 import { Battlefield } from "../libs/battlefield.js";
 import { PlayersInfo } from "../libs/playersInfo.js";
+import { JWT_SECRET } from "./constant.js";
+import { gameRooms } from "../libs/gameRoom.js";
+import { getUserById } from "../services/user.js";
 
 const initWs = (httpServer) => {
     const io = new Server(httpServer, {
@@ -18,8 +23,85 @@ const initWs = (httpServer) => {
       const matchingPool = new MatchingPool();
       const playerInfos = new PlayersInfo();
       
+      const homeNamespace = io.of('/')
       const matchmakingNamespace = io.of("/matchmaking");
       const battlefieldNamespace = io.of("/battlefield");
+
+      homeNamespace.on("connection", async (socket) => {
+        const token = socket.handshake.auth.token;
+        if(!token) {
+          console.error('connection failed: no token provided')
+          return
+        }
+
+        // 验证并解析 token
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            // console.log('decoded', decoded)
+
+            const {
+              id,
+              name
+            } = decoded
+
+            console.log(`[home/connected] ${id}/${name} connected!`);
+
+            // createGameRoom
+            socket.on("createGameRoom", async ({hostId}) => {
+              console.log(`[home/createGameRoom] ${id}/${name}`);
+
+              // 查询房主信息
+              const host = await getUserById(hostId)
+
+              // 创建房间
+              const gameRoomId = uuidv4()
+              gameRooms.createRoom({
+                id: gameRoomId,
+                hostId,
+                createdAt: new Date().toLocaleString(),
+                players: [host]
+              })
+
+              // 返回房间id
+              socket.emit('createGameRoom', gameRoomId)
+
+            })
+
+            // enterRoom
+            socket.on("enterRoom", async () => {
+              // TODO io 应该要换成 room
+              io.emit('enterRoom')
+            })
+
+            socket.on("disconnect", (reason) => {
+              console.log(`[home/disconnected] ${id}/${name} reason: ${reason}`);
+          
+              switch (reason) {
+                case "client namespace disconnect": {
+                  // 客户端主动断开连接
+          
+                  break;
+                }
+          
+                case "transport close": {
+                  // 客户端网络异常断开连接 / 客户端关闭浏览器
+          
+                  // 玩家在比赛中
+          
+                  break;
+                }
+          
+                default: {
+                  break;
+                }
+              }
+          
+            });
+        }
+        catch (err) {
+            console.error('connection failed: 身份认证失败', err)
+        }
+      });
       
       matchmakingNamespace.on("connection", (socket) => {
         const playerId = socket.handshake.auth.token;

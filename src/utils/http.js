@@ -5,12 +5,11 @@ import bodyParser from "koa-bodyparser";
 import jwt from "jsonwebtoken"
 
 import userRoutes from "../routes/user.js"
+import gameRoomRoutes from "../routes/gameRoom.js"
+import { JWT_SECRET } from "./constant.js";
 
 const app = new Koa();
 const router = new Router()
-
-// JWT 密钥（应存储在环境变量中）
-export const JWT_SECRET = 'vikim294'
 
 /**
  * 全局错误处理中间件
@@ -54,9 +53,9 @@ app.use(async (ctx, next) => {
 
   const elapsed = Math.ceil(performance.now() - now)
   console.log(`
-      *********************************
-      ${method} ${path} [${ctx.status}] ${elapsed}ms
-      *********************************
+      ********************************************
+      ${new Date().toLocaleString()} ${method} ${path} [${ctx.status}] ${elapsed}ms
+      ********************************************
   `)
 })
 
@@ -100,5 +99,7 @@ app.use(router.routes()).use(router.allowedMethods())
 // user routes
 app.use(userRoutes.routes()).use(userRoutes.allowedMethods())
 
+// gameRoom routes
+app.use(gameRoomRoutes.routes()).use(gameRoomRoutes.allowedMethods())
 
 export default app
