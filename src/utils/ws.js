@@ -23,11 +23,8 @@ const initWs = (httpServer) => {
       const matchingPool = new MatchingPool();
       const playerInfos = new PlayersInfo();
       
-      const homeNamespace = io.of('/')
-      const matchmakingNamespace = io.of("/matchmaking");
-      const battlefieldNamespace = io.of("/battlefield");
-
-      homeNamespace.on("connection", async (socket) => {
+      // connection
+      io.on("connection", async (socket) => {
         const token = socket.handshake.auth.token;
         if(!token) {
           console.error('connection failed: no token provided')
@@ -44,13 +41,13 @@ const initWs = (httpServer) => {
               name
             } = decoded
 
-            console.log(`[home/connected] ${id}/${name} connected!`);
+            console.log(`[connected] ${id}/${name} connected!`);
 
             // createGameRoom
             socket.on("createGameRoom", async ({hostId}) => {
-              console.log(`[home/createGameRoom] ${id}/${name}`);
+              console.log(`[createGameRoom] ${id}/${name}`);
 
-              // 查询房主信息
+              // 查找房主信息
               const host = await getUserById(hostId)
 
               // 创建房间
@@ -63,18 +60,58 @@ const initWs = (httpServer) => {
               })
 
               // 返回房间id
-              socket.emit('createGameRoom', gameRoomId)
-
+              socket.emit('gameRoomCreated', gameRoomId)
             })
 
             // enterRoom
-            socket.on("enterRoom", async () => {
-              // TODO io 应该要换成 room
-              io.emit('enterRoom')
+            socket.on("enterRoom", async (gameRoomId) => {
+              console.log(`[enterRoom] ${id}/${name}`);
+
+              // gameRoom数据
+              const gameRoom = gameRooms.getRoomById(gameRoomId)
+              if(!gameRoom) {
+                console.log(`gameRoom ${gameRoom} is null`)
+                return
+              }
+
+              // socket 加入 room
+              socket.join(gameRoomId)
+
+              // broadcast in room
+              io.in(gameRoomId).emit('enterRoom', gameRoom)
             })
 
+            // leaveRoom
+            socket.on("leaveRoom", async ({userId, gameRoomId}) => {
+              console.log(`[leaveRoom] ${id}/${name}`);
+
+              // socket 离开 room
+              socket.leave(gameRoomId)
+
+              // 更新 gameRoom数据
+              const gameRoom = gameRooms.getRoomById(gameRoomId)
+              if(!gameRoom) return
+              gameRoom.removePlayerById(userId)
+
+              if(gameRoom.players.length > 0) {
+                // 如果离开的是 房主
+                if(userId === gameRoom.hostId) {
+                  // 设置新房主
+                  gameRoom.hostId = gameRoom.players[0].id
+                }
+
+                // broadcast in room
+                io.in(gameRoomId).emit('leaveRoom', gameRoom)
+              }
+              else {
+                // 删除房间
+                gameRooms.deleteRoomById(gameRoom.id)
+              }
+            })
+
+            // disconnect
             socket.on("disconnect", (reason) => {
-              console.log(`[home/disconnected] ${id}/${name} reason: ${reason}`);
+              console.log(`[disconnected] ${id}/${name} reason: ${reason}`);
           
               switch (reason) {
                 case "client namespace disconnect": {
@@ -102,6 +139,10 @@ const initWs = (httpServer) => {
             console.error('connection failed: 身份认证失败', err)
         }
       });
+
+      const matchmakingNamespace = io.of("/matchmaking");
+      const battlefieldNamespace = io.of("/battlefield");
+
       
       matchmakingNamespace.on("connection", (socket) => {
         const playerId = socket.handshake.auth.token;

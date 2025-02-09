@@ -134,6 +134,42 @@ router.post('/login', async (ctx) => {
 })
 
 /**
+* 更新token
+*/
+router.get('/newToken', async (ctx) => {
+    const {
+        id, name
+    } = ctx.request.query
+
+    if(!id || !name) {
+        ctx.status = 400
+        ctx.body = {
+            msg: '请提供用户信息',
+        }
+
+        return
+    }
+
+    // 生成 JWT
+    const userInfo = {
+        id,
+        name
+    }
+
+    const newToken = jwt.sign(userInfo, JWT_SECRET, {
+        // 过期时间
+        expiresIn: '1h'
+    })
+
+    ctx.body = {
+        msg: '更新token成功',
+        data: {
+            newToken
+        }
+    }
+})
+
+/**
 * 获取用户列表
 */
 router.get('/users', async (ctx) => {

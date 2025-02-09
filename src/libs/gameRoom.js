@@ -2,6 +2,7 @@ class GameRoom {
     id = null
     hostId = null
     createdAt = null
+    // 房间可容纳玩家的数量
     size = 2
     status = 'waiting'
     players = []
@@ -20,7 +21,6 @@ class GameRoom {
     addPlayer(player) {
         if(!this.findPlayerById(player.id)) {
             this.players.push(player)
-            this.size++
         }
     }
 
