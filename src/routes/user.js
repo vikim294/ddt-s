@@ -150,6 +150,18 @@ router.get('/newToken', async (ctx) => {
         return
     }
 
+    // 确保 30mins内 只能调用该接口一次
+    const key = `getNewToken:${id}`
+    const value = 'locked'
+    const res = await redis.set(key, value, 'EX', 30 * 60, 'NX')
+    if(res !== 'OK') {
+        ctx.body = {
+            msg: '30分钟内只能请求新 token 一次',
+        }
+
+        return
+    }
+
     // 生成 JWT
     const userInfo = {
         id,
