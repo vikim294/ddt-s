@@ -13,29 +13,29 @@ export class MatchingPool {
     this.pool.push(client);
   }
 
-  remove(clientId) {
-    this.pool = this.pool.filter((item) => item.id !== clientId);
+  remove(playerId) {
+    this.pool = this.pool.filter((item) => item.player.id !== playerId);
   }
 
-  has(clientId) {
-    return this.pool.find((item) => item.id === clientId);
+  has(playerId) {
+    return this.pool.find((item) => item.player.id === playerId);
   }
 
   tryToMatch(client) {
     let minimumLevelDifference = 100;
-    let matchedPlayer = null;
+    let matchedClient = null;
     this.pool.forEach((item) => {
-      if (item.id !== client.id) {
-        const gap = Math.abs(item.level - client.level);
+      if (item.player.id !== client.player.id) {
+        const gap = Math.abs(item.player.level - client.player.level);
         if (gap < minimumLevelDifference) {
           minimumLevelDifference = gap;
-          matchedPlayer = item;
+          matchedClient = item;
         }
       }
     });
 
-    if (matchedPlayer !== null) {
-      return [client, matchedPlayer];
+    if (matchedClient !== null) {
+      return [client, matchedClient];
     }
 
     return null;

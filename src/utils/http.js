@@ -3,6 +3,10 @@ import cors from "@koa/cors";
 import Router from "koa-router";
 import bodyParser from "koa-bodyparser";
 import jwt from "jsonwebtoken"
+import serve from "koa-static"
+import path from 'path'
+import fs from "fs"
+import { fileURLToPath } from 'url';
 
 import userRoutes from "../routes/user.js"
 import gameRoomRoutes from "../routes/gameRoom.js"
@@ -31,6 +35,24 @@ app.use(async (ctx, next) => {
 // cors
 app.use(cors())
 
+// 设置静态文件目录
+// const __dirname = path.dirname(new URL(import.meta.url).pathname);
+// const filePath = path.join(__dirname, 'dist', 'index.html');
+
+// console.log(import.meta.url) // file:///D:/VScodeWorks/ddt/ddt-s/src/utils/http.js 
+// console.log(fileURLToPath(import.meta.url)) // D:\VScodeWorks\ddt\ddt-s\src\utils\http.js
+
+const staticPath = path.join(fileURLToPath(import.meta.url), '../../../', 'dist') 
+app.use(serve(staticPath)); 
+// console.log(staticPath, path.join(staticPath, 'index.html'));
+console.log(staticPath); // D:\VScodeWorks\ddt\ddt-s\dist
+
+// 处理 SPA 的路由回退q
+// app.use(async (ctx) => {
+//     ctx.type = 'html';
+//     ctx.body = fs.createReadStream(path.join(staticPath, 'index.html'));
+//   });
+
 // bodyParser
 app.use(bodyParser({
     // 解析失败时 抛出错误
@@ -52,11 +74,7 @@ app.use(async (ctx, next) => {
   await next()
 
   const elapsed = Math.ceil(performance.now() - now)
-  console.log(`
-      ********************************************
-      ${new Date().toLocaleString()} ${method} ${path} [${ctx.status}] ${elapsed}ms
-      ********************************************
-  `)
+  console.log(`${new Date().toLocaleString()} ${method} ${path} [${ctx.status}] ${elapsed}ms`)
 })
 
 /**
@@ -86,20 +104,23 @@ app.use(async (ctx, next) => {
       var decoded = jwt.verify(token.split(' ')[1], JWT_SECRET);
       // console.log('decoded', decoded)
 
+      // 放行
       await next()
 
-      // 如果 token 快要过期了，则生成新 token 并返回
+      // 如果本身就是 请求newToken的请求 则 return
       if(ctx.path.includes('/newToken')) return
 
       const remainingSeconds = decoded.exp - Date.now() / 1000 
       if(remainingSeconds > TOKEN_REFRESH_THRESHOLD) return
 
+      // 如果 token 快要过期了
       if(ctx.response.body && typeof ctx.response.body === 'object') {
         const userInfo = {
             id: decoded.id,
             name: decoded.name,
         }
 
+        // 则生成新 token 并返回
         const token = jwt.sign(userInfo, JWT_SECRET, {
             // 过期时间
             expiresIn: '1h'

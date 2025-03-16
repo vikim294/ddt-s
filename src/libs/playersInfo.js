@@ -19,6 +19,13 @@ export class PlayersInfo {
 
   add(playerId) {
     this.map.set(playerId, {})
+    // console.log('----- add playerInfo -----')
+    // console.log(this.getPlayerIds())
+    // this.map.forEach((v, k) => {
+    //   console.log(`playerId: ${k}`)
+    //   console.log(`socketId:`, v.socket?.id)
+    //   console.log(`battlefieldId`, v.battlefield?.id)
+    // })
   }
 
   remove(playerId) {
@@ -26,46 +33,40 @@ export class PlayersInfo {
   }
 
   get(playerId) {
-    return this.map.get(playerId)
-  }
-
-  remove(playerId) {
-    this.map.delete(playerId)
+    const playerInfo = this.map.get(playerId)
+    if(!playerInfo) {
+      throw new Error(`playerInfo ${playerId} is null`)
+    }
+    return playerInfo
   }
 
   getSocket(playerId) {
     const playerInfo = this.get(playerId)
-    if(!playerInfo) return null
     return playerInfo.socket
   }
 
   setSocket(playerId, socket) {
     const playerInfo = this.get(playerId)
-    if(!playerInfo) return null
     playerInfo.socket = socket
-  }
-
-  setBattlefield(playerId, battlefield) {
-    const playerInfo = this.get(playerId)
-    if(!playerInfo) return null
-    playerInfo.battlefield = battlefield
   }
 
   getBattlefield(playerId) {
     const playerInfo = this.get(playerId)
-    if(!playerInfo) return null
     return playerInfo.battlefield
+  }
+
+  setBattlefield(playerId, battlefield) {
+    const playerInfo = this.get(playerId)
+    playerInfo.battlefield = battlefield
   }
 
   getIsReconnection(playerId) {
     const playerInfo = this.get(playerId)
-    if(!playerInfo) return null
     return playerInfo.isReconnection
   }
 
   setIsReconnection(playerId, isReconnection) {
     const playerInfo = this.get(playerId)
-    if(!playerInfo) return null
     playerInfo.isReconnection = isReconnection
   }
 }
